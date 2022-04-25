@@ -255,4 +255,89 @@ plot(multi_rast34)
 # cannot be directly saved to .rds or used in cluster computing
 # 
 # * 2.4 geographic and projected coordinate systems
+# CRS defines how spatial data is related to the surface of the eart
 # 
+# * * 2.24.1 geographic crs
+# defined by lat lon, which is an angular distance from prime meridian and equator
+# not measured in meters, but degrees
+# use a perfect sphere or ellipsoid model
+# equator radius is 11.5 km longer than polar radius
+# 
+# the datum relates the cartesian coordinates to location
+# geocentric datum (like wgs84) uses the center of the earth
+# local datum shifts ellipsoid to aligh with surface at particular location
+# 
+# * * 2.4.2 projected crs
+# based on projecting geographic crs into a flat surface, with oriin, x, y, and
+# unit of measurement
+# distorts area, direction, distance, or shape
+# 
+# conic, cylindrical, or planar projections are used
+# conic is good for midlatitude
+# cyclindirical is used when mapping the world
+# planar is used for polar regions
+# 
+# * 2.5 units
+# geometry data in sf objects have native support for units
+luxembourg = world[world$name_long == "Luxembourg", ]
+st_area(luxembourg)
+# returns the area in meters squared
+# convert to km sq
+units::set_units(st_area(luxembourg), km^2)
+
+# right now only sf supports units, so watch when using raster data
+
+# * 2.6 exercises
+# 1
+summary(st_geometry(world))
+# multipolygon geometry, 177 countries, crs is wgs84(epsg4326)
+# 
+# 2
+plot(world["continent"], reset = FALSE)
+cex = sqrt(world$pop) / 1000
+world_cents = st_centroid(world, of_largest = TRUE)
+plot(st_geometry(world_cents), add = TRUE, cex = cex)
+# cex is the character expansion factor, sets the size of things relative to default
+# world_cents is a point character. adding a cex made the area of the point proportional
+# to the size of the population
+# im going to make a chloropleth map that shows population per area in colors
+# 
+head(world)
+world = dplyr::mutate(world, 
+       pop_per_km2 = pop/area_km2)
+
+library(tmap)
+tm_shape(world)+
+  tm_polygons("pop_per_km2",
+              style = "quantile",
+              title = "World population per sq. km.")
+
+# same thing but with plot
+plot(world["pop_per_km2"],
+     breaks = "quantile", nbreaks = 10)
+
+# create maps of nigeria in context
+par(mfcol = c(1,1))
+nigeria = world[world$name_long == "Nigeria", ]
+world_coords = st_coordinates(world_cents)
+plot(st_geometry(nigeria), expandBB = c(1, 1, 1, 3), col = "gray", lwd = 4)
+plot(africa[0],
+     add = TRUE )
+text(world_coords, world$name_long)
+
+# 4 
+my_raster = rast(nrow = 10, ncol = 10,
+                 vals = runif(100, min = 0, max = 10))
+plot(my_raster)
+
+# 5 
+nlcd = system.file("raster/nlcd.tif", package = "spDataLarge") %>% 
+  rast()
+class(nlcd)
+crs(nlcd)
+nlyr(nlcd)
+ncell(nlcd)
+summary(nlcd)
+res(nlcd)
+ext(nlcd)
+plot(nlcd)
