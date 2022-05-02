@@ -339,10 +339,125 @@ plot(ndvi_rast)
 r_focal = focal(elev, w = matrix(1, nrow = 3, ncol = 3), fun = min)
 plot(r_focal)
 
-# * * 4.3.5 zonal operatoins
+# * * 4.3.5 zonal operatoins----
 # takes a categorical raster and calculates all the values that overlay for each
 # category
 z = zonal(elev, grain, fun = "mean",  as.raster = TRUE)
 z
-# this is mean altitude fo reach grain size class
+# this is mean altitude fo each grain size class
 plot(z)
+
+# * * 4.3.6 global operations-----
+# descriptive stats for entire raster
+# distance, viewsheds, etc.
+# 
+# * * 4.3.7 map algebra in vector----
+# blah
+# 
+# * * 4.3.8 merging rasters----
+# merge uses the values of the first raster in case of overlap
+# mosaic lets you define a function for overlapping area
+# like using mean to smooth a border
+# 
+# * 4.4 exercises----
+# 1
+summary(canterbury_height)
+plot(st_geometry(nz))
+plot(st_geometry(canterbury), col = "yellow", add = TRUE)
+plot(st_geometry(canterbury_height), col = "black", symbol = 3, add = TRUE)
+
+# 2
+nz_regions = st_join(nz, nz_height)
+st_drop_geometry(nz_regions) |> group_by(Name) |> 
+  summarise(
+    count = n()
+  ) |> 
+  arrange(desc(count)) |> 
+  slice(2)
+  
+# 3
+# basically a repeat of previous
+# 
+# 4
+colorado = us_states |> 
+  filter(name == "Colorado")
+
+col_intersects = us_states[colorado, ]
+plot(col_intersects)
+
+col_touch = us_states[colorado, , op = st_touches]
+plot(col_touch)
+
+wash_to_cal = us_states |> 
+  filter(grepl(pattern = "Columbia|Cali", x = name)) |> 
+  st_centroid() |> 
+  st_union() |> 
+  st_cast("LINESTRING")
+
+states_crossed = us_states[wash_to_cal, , op = st_crosses]
+
+plot(us_states$geometry, main = "States crossed by a straight line\n from the District of Columbia to central California")
+plot(states_crossed$geometry, col = "grey", add = TRUE)
+plot(wash_to_cal, add = TRUE)
+
+# 5
+dem = rast(system.file("raster/dem.tif", package = "spDataLarge"))
+reclass = matrix(c(-Inf, 300, 0, 300, 500, 1, 500, Inf, 2),
+                ncol = 3, byrow = TRUE)
+dem_reclass = classify(dem, rcl = reclass)
+levels(dem_reclass) = c("low", "med", "high")
+plot(dem_reclass)
+
+ndvi = rast(system.file("raster/ndvi.tif", package = "spDataLarge"))
+
+zonal(c(dem, ndvi), dem_reclass, fun = "mean")
+
+# 6
+r = rast(system.file("ex/logo.tif", package = "terra"))
+plot(r)
+
+filter_x = matrix(c(-1, -2, -1, 0, 0, 0, 1, 2, 1), nrow = 3)
+sobel_x = focal(r, w = filter_x)
+plot(sobel_x, col = c("white", "black"))
+
+filter_y = matrix(c(1, 0, -1, 2, 0, -2, 1, 0, -1), nrow = 3)
+sobel_y = focal(r, w = filter_y)
+plot(sobel_y, col = c("black", "white"))
+
+
+# 7 
+landsat = rast(system.file("raster/landsat.tif", package = "spDataLarge"))
+plot(landsat)
+
+ndwi_fun = function(green, nir){
+  (green - nir)/(green+nir)
+}
+
+ndvi_landsat = lapp(landsat[[c(4,3)]], fun = ndvi_fun)
+ndwi_landsat = lapp(landsat[[c(2,4)]], fun = ndwi_fun)
+
+plot(ndwi_landsat)
+plot(ndvi_landsat)
+
+combo = c(ndwi_landsat, ndvi_landsat) |> 
+  as.data.frame() |> 
+  setNames(c("ndwi", "ndvi"))
+  
+cor(combo$ndvi, combo$ndwi)
+
+# 8 
+install.packages("geodata")
+spain_dem = geodata::elevation_30s(country = "Spain", path = ".", mask = FALSE) |> 
+  aggregate(fact = 20) #reduce resolution by factor of 20
+
+plot(spain_dem)
+
+water_mask = is.na(spain_dem)
+plot(water_mask)
+water_mask[water_mask == 0] = NA
+plot(water_mask)
+#now our mask has NAs over all the land, and 1s for water
+#distance calculates dist for NA cells to the nearest cell that is not NA, so
+#in this case from land to coast
+distance_to_coast = distance(water_mask)
+plot(distance_to_coast)
