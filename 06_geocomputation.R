@@ -1,5 +1,5 @@
 # 6 raster vector interactions----
-pacman::p_load(dplyr, terra, sf, tmap, rcartocolor, grid, ggplot2)
+pacman::p_load(dplyr, terra, sf, tmap, rcartocolor, grid, ggplot2, spData)
 
 # * 6.1 introduction----
 # raster cropping and masking using vector objects
@@ -143,4 +143,133 @@ zion_nlcd %>%
 # which contains fraction of each cell covered by the polygon
 # useful for calculating weighted mean for continous rasters or more precise for
 # categorical rasters
+
+# * 6.4 rasterization----
+# convert a vector into a raster object using rasterize and a template vector
+# we'll use the cycle hire dataset to create a template raster
+cycle_hire_osm = spData::cycle_hire_osm
+cycle_hire_osm_projected = st_transform(cycle_hire_osm, "EPSG:27700")
+raster_template = rast(ext(cycle_hire_osm_projected), resolution = 1000,
+                       crs = st_crs(cycle_hire_osm_projected)$wkt)
+# presence absence raster
+# is there a cycle hire point here? specify with field. any cell with a point
+# gets assigned a 1
+ch_raster1 = rasterize(vect(cycle_hire_osm_projected), raster_template,
+                       field = 1)
+# specifying the fun argument as length counts the number of hire points in each
+# grid cell
+ch_raster2 = rasterize(vect(cycle_hire_osm_projected), raster_template, 
+                       fun = "length")
+
+# the cycle hire data has capacity of each hire point
+# what is the capacity in each grid cell? use the sum fun on field capacity
+ch_raster3 = rasterize(vect(cycle_hire_osm_projected), raster_template, 
+                       field = "capacity", fun = sum)
+# plot
+r0p = tm_shape(cycle_hire_osm_projected) + 
+  tm_symbols(col = "capacity", title.col = "Capacity: ", size = 0.1) + 
+  tm_layout(main.title = "A. Points", main.title.size = 1, 
+            legend.position = c("right", "bottom"), legend.frame = TRUE)
+
+r1p = tm_shape(ch_raster1) + 
+  tm_raster(legend.show = TRUE, title = "Values: ") + 
+  tm_layout(main.title = "B. Presence/absence", main.title.size = 1, 
+            legend.position = c("right", "bottom"), legend.frame = TRUE)
+
+r2p = tm_shape(ch_raster2) + 
+  tm_raster(legend.show = TRUE, title = "Values: ") + 
+  tm_layout(main.title = "C. Count", main.title.size = 1,
+            legend.position = c("right", "bottom"), legend.frame = TRUE)
+
+r3p = tm_shape(ch_raster3) + 
+  tm_raster(legend.show = TRUE, title = "Values: ") +
+  tm_layout(main.title = "D. Aggregated capacity", main.title.size = 1,
+            legend.position = c("right", "bottom"), legend.frame = TRUE)
+
+tmap_arrange(r0p, r1p, r2p, r3p, ncol = 2)
+
+# * 6.5 spatial vectorization----
+# convert continuous raster data into vector data
+# simple thing is to convert centroids of cells into points using as.points
+elev = rast(system.file("raster/elev.tif", package = "spData"))
+elev_point = as.points(elev) %>% 
+  st_as_sf()
+# creating isolines or contours is useful
+dem = rast(system.file("raster/dem.tif", package = "spDataLarge"))
+cl = as.contour(dem)
+plot(dem, axes = FALSE)
+plot(cl, add = TRUE)
+# can also use contour() rasterVis::contourplot, or tmap::tm_iso()
 # 
+# as.polygons converts each cell into five coordinates (sides and center)
+# convert grain object into polygons, then dissolve borders between polygons
+# with same attribute classes
+grain = rast(system.file("raster/grain.tif", package = "spData"))
+grain_poly = as.polygons(grain, dissolve = FALSE) %>% 
+  st_as_sf()
+grain_poly2 = as.polygons(grain) %>% 
+  st_as_sf()
+
+cols = c("clay" = "brown", "sand" = "rosybrown", "silt" = "sandybrown")
+
+p1p = tm_shape(grain) +
+  tm_raster(legend.show = FALSE, palette = cols) +
+  tm_layout(main.title = "A. Raster", frame = FALSE,
+            main.title.size = 1)
+
+p2p = tm_shape(grain_poly) +
+  tm_polygons("grain", legend.show = FALSE, palette = cols, lwd = 3) +
+  tm_layout(main.title = "B.Polygons", frame = FALSE,
+            main.title.size = 1)
+
+p3p = tm_shape(grain_poly2) + 
+  tm_polygons("grain", legend.show = FALSE, palette = cols, lwd = 3) +
+  tm_layout(main.title = "C. Aggregated polygons", frame = FALSE,
+            main.title.size = 1)
+
+tmap_arrange(p1p, p2p, p3p, ncol = 3)
+
+# * 6.6 exercises----
+zion_points_path = system.file("vector/zion_points.gpkg", package = "spDataLarge")
+zion_points = read_sf(zion_points_path)
+srtm = rast(system.file("raster/srtm.tif", package = "spDataLarge"))
+ch = st_combine(zion_points) %>%
+  st_convex_hull() %>% 
+  st_as_sf()
+# convex hull is the smallest convext polygon that encloses all the points in the
+# set
+
+# 1
+srtm_points_crop = crop(srtm, zion_points)
+srtm_ch_crop = crop(srtm, ch)
+srtm_points_mask = mask(srtm, vect(zion_points))
+srtm_ch_mask = mask(srtm, vect(ch))
+
+par(mfcol = c(2,2))
+plot(srtm_points_crop)
+plot(srtm_ch_crop)
+plot(srtm_points_mask)
+plot(srtm_ch_mask)
+
+# 2
+# extract srtm values at points
+srtm_points = extract(srtm, vect(zion_points))
+points_buff = zion_points |> 
+  st_buffer(dist = 90) |> 
+  vect()
+srtm_buff_points = extract(srtm, points_buff)
+
+# 3
+over3.1k = nz_height |> filter(elevation > 3100)
+temp_rast = rast(ext(over3.1k), resolution = 3000,
+                 crs = st_crs(over3.1k)$wkt)
+
+highpoints = rasterize(vect(over3.1k), temp_rast, field = "elevation", fun = "length") 
+plot(highpoints)
+maxpoints = rasterize(vect(over3.1k), temp_rast, field = "elevation", fun = "max") 
+plot(maxpoints)
+
+# 4
+agg_highpoints = aggregate(highpoints, fact = 2, fun = sum)
+res(agg_highpoints)
+plot(agg_highpoints)
